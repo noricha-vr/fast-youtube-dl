@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8010:8080"
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+    restart: unless-stopped

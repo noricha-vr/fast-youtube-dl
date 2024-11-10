@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+yt-dlp==2024.3.10  # youtube-dlの代わりにyt-dlpを使用
