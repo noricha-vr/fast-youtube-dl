@@ -2,11 +2,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
-import yt_dlp as youtube_dl
+import yt_dlp
 import uuid
 import os
 import logging
 from datetime import datetime
+import certifi
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
@@ -73,12 +74,17 @@ async def download_video(request: DownloadRequest):
     # youtube-dlのオプションを設定
     ydl_opts = {
         'outtmpl': output_template,
-        'quiet': False,  # Enable output for better debugging
-        'no_warnings': False,  # Enable warnings
-        'verbose': True,  # Add verbose output
-        'extract_flat': True,  # Add this to help with extraction issues
-        'force_generic_extractor': False,  # Don't force generic extractor
-        'ignoreerrors': True,  # Continue on download errors
+        'quiet': False,
+        'no_warnings': False,
+        'verbose': True,
+        'extract_flat': False,
+        'force_generic_extractor': False,
+        'ignoreerrors': True,
+        'nocheckcertificate': True,
+        'extractor_retries': 3,
+        'socket_timeout': 30,
+        'certfile': certifi.where(),
+        'tls_verify': certifi.where(),
     }
 
     try:
@@ -92,18 +98,23 @@ async def download_video(request: DownloadRequest):
                 }],
             })
         else:
-            format_string = 'bestvideo+bestaudio/best'
             if request.quality:
                 if request.quality.isdigit():
-                    format_string = f'bestvideo[height<={request.quality}]+bestaudio/best[height<={request.quality}]'
+                    format_string = f'bestvideo[height<={request.quality}]+bestaudio/best[height<={request.quality}]/best'
                 else:
-                    format_string = request.quality
-            ydl_opts.update({'format': format_string})
+                    format_string = f'{request.quality}/best'
+            else:
+                format_string = 'bestvideo+bestaudio/best'
+            
+            ydl_opts.update({
+                'format': format_string,
+                'merge_output_format': 'mp4',
+            })
 
         logger.info(f"Starting download for URL: {request.url} with options: {ydl_opts}")
         
         # Add error handling for video info extraction
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
                 # First try to extract video info
                 video_info = ydl.extract_info(str(request.url), download=False)
@@ -115,7 +126,7 @@ async def download_video(request: DownloadRequest):
                 
                 # If info extraction succeeds, proceed with download
                 ydl.download([str(request.url)])
-            except youtube_dl.utils.DownloadError as e:
+            except yt_dlp.utils.DownloadError as e:
                 logger.error(f"Download error details: {str(e)}")
                 raise HTTPException(
                     status_code=400,
@@ -139,7 +150,7 @@ async def download_video(request: DownloadRequest):
             media_type='application/octet-stream'
         )
 
-    except youtube_dl.DownloadError as e:
+    except yt_dlp.DownloadError as e:
         logger.error(f"Download error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
